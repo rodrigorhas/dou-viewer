@@ -6,8 +6,8 @@ use Carbon\Carbon;
 use GuzzleHttp\Client;
 use GuzzleHttp\Cookie\CookieJar;
 use GuzzleHttp\Exception\GuzzleException;
-use GuzzleHttp\Psr7\Utils;
 use Illuminate\Contracts\Filesystem\Filesystem;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Storage;
@@ -19,7 +19,8 @@ class DOUService
     const URL_LOGIN = "logar.php";
     const URL_DOWNLOAD = "index.php";
 
-    const DOU_SECTIONS = ['DO1', 'DO2', 'DO3', 'DO1E', 'DO2E', 'DO3E'];
+//    const DOU_SECTIONS = ['DO1', 'DO2', 'DO3', 'DO1E', 'DO2E', 'DO3E'];
+    const DOU_SECTIONS = ['DO1E'];
 
     protected Client $client;
     protected CookieJar $cookieJar;
@@ -69,15 +70,22 @@ class DOUService
      */
     public function download($dates = [])
     {
-        if (!count($dates)) {
-            $dates[] = Carbon::now()->format('Y-m-d');
-        }
+        $dates = $this->todayIfEmpty($dates);
 
         foreach ($dates as $date) {
             foreach (self::DOU_SECTIONS as $section) {
                 $this->downloadDOUFile($date, $section, 'zip');
             }
         }
+    }
+
+    public function todayIfEmpty(array $dates = [])
+    {
+        if (!count($dates)) {
+            $dates[] = Carbon::now()->format('Y-m-d');
+        }
+
+        return $dates;
     }
 
     /**
@@ -93,22 +101,28 @@ class DOUService
 
         $this->ensurePathExists($filepath);
 
-        $resource = fopen($this->storage->path($filepath), 'w+');
-        $stream = Utils::streamFor($resource);
-
         $url = $this->getDownloadUrl($date, $section);
 
-        $this->client->get($url, [
-            'save_to' => $stream,
+        $response = $this->client->get($url, [
             'cookies' => $this->cookieJar
         ]);
+
+        $sucessfull = Arr::first($response->getHeader('content-type')) === 'application/octet-stream';
+
+        if (!$sucessfull) {
+            unlink($this->storage->path($filepath));
+
+            return false;
+        }
+
+        $this->storage->put($filepath, $response->getBody());
 
         return true;
     }
 
     public function getStoragePath(
         string $type = 'zip', string $append = '',
-        bool $withExtension = false, bool $raw = false): string
+        bool   $withExtension = false, bool $raw = false): string
     {
         if ($withExtension) {
             $extension = ".$type";
@@ -160,5 +174,12 @@ class DOUService
     public function getFilename(string $date, string $section, string $type = 'zip'): string
     {
         return "{$date}-{$section}.{$type}";
+    }
+
+    public function extract(array $dates = [])
+    {
+        $dates = $this->todayIfEmpty($dates);
+
+
     }
 }
