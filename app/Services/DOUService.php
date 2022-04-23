@@ -7,9 +7,11 @@ use GuzzleHttp\Client;
 use GuzzleHttp\Cookie\CookieJar;
 use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\Psr7\Utils;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 
 class DOUService
@@ -21,10 +23,12 @@ class DOUService
 
     protected Client $client;
     protected CookieJar $cookieJar;
+    protected Filesystem $storage;
 
     public function __construct()
     {
         $this->client = $this->createClient();
+        $this->storage = Storage::disk('local');
     }
 
     private function createClient(): Client
@@ -46,7 +50,7 @@ class DOUService
     {
         $this->cookieJar = Cache::remember(
             'inlabs_session_cookie',
-            now()->addMinutes(10),
+            now()->addMinutes(Config::get('inlabs.cookie-cache-time')),
             function () {
                 $jar = new CookieJar();
 
@@ -71,7 +75,7 @@ class DOUService
 
         foreach ($dates as $date) {
             foreach (self::DOU_SECTIONS as $section) {
-                $this->downloadDOUFile($date, $section);
+                $this->downloadDOUFile($date, $section, 'zip');
             }
         }
     }
@@ -79,28 +83,82 @@ class DOUService
     /**
      * @throws GuzzleException
      */
-    protected function downloadDOUFile(string $date, $section)
+    protected function downloadDOUFile(string $date, string $section, string $type, bool $overwrite = false)
     {
-        $storage = Storage::disk('local');
+        $filepath = $this->getStoragePath(append: "/$date/$section", withExtension: true, raw: true);
 
-        $filename = "{$date}-{$section}.zip";
-        $filepath = "dou/zip/$date/$section.zip";
-
-        $targetFolder = dirname($filepath);
-
-        if (!$storage->exists($targetFolder)) {
-            $storage->makeDirectory($targetFolder);
+        if (!$overwrite && $this->isCached($date, $section, $type)) {
+            return true;
         }
 
-        dump($storage->path($filepath));
-        $resource = fopen($storage->path($filepath), 'w+');
+        $this->ensurePathExists($filepath);
+
+        $resource = fopen($this->storage->path($filepath), 'w+');
         $stream = Utils::streamFor($resource);
 
-        $url = self::URL_DOWNLOAD . "?p={$date}&dl={$filename}";
+        $url = $this->getDownloadUrl($date, $section);
 
         $this->client->get($url, [
             'save_to' => $stream,
             'cookies' => $this->cookieJar
         ]);
+
+        return true;
+    }
+
+    public function getStoragePath(
+        string $type = 'zip', string $append = '',
+        bool $withExtension = false, bool $raw = false): string
+    {
+        if ($withExtension) {
+            $extension = ".$type";
+
+            if (strlen($append) && !Str::endsWith($append, $extension)) {
+                $append .= $extension;
+            }
+        }
+
+        $append = Str::start($append, '/');
+
+        $path = "/dou/{$type}{$append}";
+
+        return $raw ? $path : $this->storage->path($path);
+    }
+
+    public function isCached(string $date, ?string $section, ?string $type): bool
+    {
+        $withExtension = !empty($section);
+
+        return $this->storage->exists(
+            $this->getStoragePath(
+                type: $type,
+                append: $section ? "$date/$section" : $date,
+                withExtension: $withExtension,
+                raw: true
+            )
+        );
+    }
+
+    private function ensurePathExists(string $path): bool
+    {
+        $targetFolder = dirname($path);
+
+        if (!$this->storage->exists($targetFolder)) {
+            $this->storage->makeDirectory($targetFolder);
+        }
+
+        return true;
+    }
+
+    public function getDownloadUrl(string $date, string $section): string
+    {
+        $filename = $this->getFilename($date, $section);
+
+        return self::URL_DOWNLOAD . "?p={$date}&dl={$filename}";
+    }
+
+    public function getFilename(string $date, string $section, string $type = 'zip'): string
+    {
+        return "{$date}-{$section}.{$type}";
     }
 }
