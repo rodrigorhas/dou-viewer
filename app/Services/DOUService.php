@@ -3,80 +3,18 @@
 namespace App\Services;
 
 use Carbon\Carbon;
-use GuzzleHttp\Client;
-use GuzzleHttp\Cookie\CookieJar;
-use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Contracts\Filesystem\Filesystem;
-use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 
 class DOUService
 {
-    const URL_LOGIN = "logar.php";
-    const URL_DOWNLOAD = "index.php";
-
-//    const DOU_SECTIONS = ['DO1', 'DO2', 'DO3', 'DO1E', 'DO2E', 'DO3E'];
-    const DOU_SECTIONS = ['DO1E'];
-
-    protected Client $client;
-    protected CookieJar $cookieJar;
     public Filesystem $storage;
 
     public function __construct()
     {
-        $this->client = $this->createClient();
         $this->storage = Storage::disk('local');
-    }
-
-    private function createClient(): Client
-    {
-        return new Client([
-            'base_uri' => Config::get('inlabs.base_url'),
-            'cookies' => true,
-            'curl' => [CURLOPT_SSLVERSION => CURL_SSLVERSION_MAX_DEFAULT],
-            'defaults' => [
-                'headers' => [
-                    "Content-Type" => "application/x-www-form-urlencoded",
-                    "Accept" => "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-                ]
-            ]
-        ]);
-    }
-
-    public function login()
-    {
-        $this->cookieJar = Cache::remember(
-            'inlabs_session_cookie',
-            now()->addMinutes(Config::get('inlabs.cookie-cache-time')),
-            function () {
-                $jar = new CookieJar();
-
-                $this->client->post(self::URL_LOGIN, [
-                    'form_params' => Config::get('inlabs.credentials'),
-                    'cookies' => $jar
-                ]);
-
-                return $jar;
-            }
-        );
-    }
-
-    /**
-     * @throws GuzzleException
-     */
-    public function download($dates = [])
-    {
-        $dates = $this->todayIfEmpty($dates);
-
-        foreach ($dates as $date) {
-            foreach (self::DOU_SECTIONS as $section) {
-                $this->downloadDOUFile($date, $section, 'zip');
-            }
-        }
     }
 
     public function todayIfEmpty(array $dates = [])
@@ -88,36 +26,18 @@ class DOUService
         return $dates;
     }
 
-    /**
-     * @throws GuzzleException
-     */
-    protected function downloadDOUFile(string $date, string $section, string $type, bool $overwrite = false)
+    public function isCached(string $date, ?string $section, ?string $type): bool
     {
-        $filepath = $this->getStoragePath(append: "/$date/$section", withExtension: true, raw: true);
+        $withExtension = !empty($section);
 
-        if (!$overwrite && $this->isCached($date, $section, $type)) {
-            return true;
-        }
-
-        $this->ensurePathExists($filepath);
-
-        $url = $this->getDownloadUrl($date, $section);
-
-        $response = $this->client->get($url, [
-            'cookies' => $this->cookieJar
-        ]);
-
-        $sucessfull = Arr::first($response->getHeader('content-type')) === 'application/octet-stream';
-
-        if (!$sucessfull) {
-            unlink($this->storage->path($filepath));
-
-            return false;
-        }
-
-        $this->storage->put($filepath, $response->getBody());
-
-        return true;
+        return $this->storage->exists(
+            $this->getStoragePath(
+                type: $type,
+                append: $section ? "$date/$section" : $date,
+                withExtension: $withExtension,
+                raw: true
+            )
+        );
     }
 
     public function getStoragePath(
@@ -139,21 +59,7 @@ class DOUService
         return $raw ? $path : $this->storage->path($path);
     }
 
-    public function isCached(string $date, ?string $section, ?string $type): bool
-    {
-        $withExtension = !empty($section);
-
-        return $this->storage->exists(
-            $this->getStoragePath(
-                type: $type,
-                append: $section ? "$date/$section" : $date,
-                withExtension: $withExtension,
-                raw: true
-            )
-        );
-    }
-
-    private function ensurePathExists(string $path): bool
+    public function ensurePathExists(string $path): bool
     {
         $targetFolder = dirname($path);
 
@@ -164,20 +70,8 @@ class DOUService
         return true;
     }
 
-    public function getDownloadUrl(string $date, string $section): string
-    {
-        $filename = $this->getFilename($date, $section);
-
-        return self::URL_DOWNLOAD . "?p={$date}&dl={$filename}";
-    }
-
     public function getFilename(string $date, string $section, string $type = 'zip'): string
     {
         return "{$date}-{$section}.{$type}";
-    }
-
-    public function extract(array $dates = [])
-    {
-        $dates = $this->todayIfEmpty($dates);
     }
 }

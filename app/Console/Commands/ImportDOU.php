@@ -3,18 +3,17 @@
 namespace App\Console\Commands;
 
 use App\Services\DOUParserService;
-use App\Services\DOUService;
 use Illuminate\Console\Command;
 
-class ExtractImportDOU extends Command
+class ImportDOU extends Command
 {
     /**
      * The name and signature of the console command.
      *
      * @var string
      */
-    protected $signature = "dou:extract-import
-       {dates?* : Dates extracted and imported}
+    protected $signature = "dou:import
+       {dates?* : Dates to be imported}
     ";
 
     /**
@@ -22,11 +21,10 @@ class ExtractImportDOU extends Command
      *
      * @var string
      */
-    protected $description = 'Extract and import DOU by given date';
+    protected $description = 'Import DOU by given date';
 
     public function __construct(
-        protected DOUParserService $parserService = new DOUParserService(),
-        protected DOUService       $douService = new DOUService()
+        protected DOUParserService $parserService = new DOUParserService()
     )
     {
         parent::__construct();
@@ -40,7 +38,7 @@ class ExtractImportDOU extends Command
     {
         $dates = $this->argument('dates');
 
-        $dates = $this->douService->todayIfEmpty($dates);
+        $dates = $this->parserService->todayIfEmpty($dates);
 
         foreach ($dates as $date) {
             $this->recursiveParse($date);
@@ -49,13 +47,13 @@ class ExtractImportDOU extends Command
 
     private function recursiveParse(string $date)
     {
-        $dateFolderPath = $this->douService->getStoragePath(append: "$date");
+        $dateFolderPath = $this->parserService->getStoragePath(append: "$date");
         $sections = $this->parserService->getSectionsFromFolder($dateFolderPath);
 
         foreach ($sections as $section => $files) {
             foreach ($files as $file) {
                 $parsed = $this->parserService->parseXML(
-                    $this->douService->getStoragePath(
+                    $this->parserService->getStoragePath(
                         append: implode('/', [$date, $section, $file])
                     )
                 );

@@ -5,8 +5,9 @@ namespace App\Services;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use RecursiveDirectoryIterator;
+use ZipArchive;
 
-class DOUParserService
+class DOUParserService extends DOUService
 {
     public function parseXML(string $filename): array
     {
@@ -84,5 +85,21 @@ class DOUParserService
                 $section, $files
             ];
         });
+    }
+
+    public function extractSectionZip(string $date, string $section): bool
+    {
+        $filepath = $this->getStoragePath(append: "/$date/$section", withExtension: true);
+
+        $zip = new ZipArchive();
+
+        if ($zip->open($filepath) === TRUE) {
+            $zip->extractTo(Str::before($filepath, '.zip'));
+            $zip->close();
+
+            return true;
+        } else {
+            return false;
+        }
     }
 }
