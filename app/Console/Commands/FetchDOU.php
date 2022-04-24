@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Services\DOUService;
+use App\Services\DOUDownloadService;
 use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Console\Command;
 
@@ -31,8 +31,8 @@ class FetchDOU extends Command
      */
     public function handle()
     {
-        /** @var DOUService $douService */
-        $douService = app(DOUService::class);
+        /** @var DOUDownloadService $douService */
+        $douService = app(DOUDownloadService::class);
 
         $douService->login();
         $douService->download($this->argument('dates'));
