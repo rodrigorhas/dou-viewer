@@ -5,7 +5,6 @@ namespace App\Services;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use RecursiveDirectoryIterator;
-use ZipArchive;
 
 class DOUParserService extends DOUService
 {
@@ -17,7 +16,7 @@ class DOUParserService extends DOUService
 
         if ($objXmlDocument === FALSE) {
             return [
-                'errors' => array_map(fn ($error) => $error->message, libxml_get_errors())
+                'errors' => array_map(fn($error) => $error->message, libxml_get_errors())
             ];
         }
 
@@ -26,34 +25,6 @@ class DOUParserService extends DOUService
         return [
             'data' => json_decode($objJsonDocument, TRUE)
         ];
-    }
-
-    protected function recursiveIterateFilter(string $dateFolderPath, $callback): array
-    {
-        if (!File::exists($dateFolderPath)) {
-            return [];
-        }
-
-        $dir = new RecursiveDirectoryIterator($dateFolderPath);
-        $result = [];
-
-        foreach ($dir as $item) {
-            $callbackResult = $callback($item);
-
-            if (!$callbackResult) {
-                continue;
-            }
-
-            if (is_array($callbackResult) && isset($callbackResult[0]) && isset($callbackResult[1])) {
-                [$key, $value] = $callbackResult;
-                $result[$key] = $value;
-                continue;
-            }
-
-            $result[] = $callbackResult;
-        }
-
-        return $result;
     }
 
     public function getSectionsFromFolder(string $path): array
@@ -87,19 +58,31 @@ class DOUParserService extends DOUService
         });
     }
 
-    public function extractSectionZip(string $date, string $section): bool
+    protected function recursiveIterateFilter(string $dateFolderPath, $callback): array
     {
-        $filepath = $this->getStoragePath(append: "/$date/$section", withExtension: true);
-
-        $zip = new ZipArchive();
-
-        if ($zip->open($filepath) === TRUE) {
-            $zip->extractTo(Str::before($filepath, '.zip'));
-            $zip->close();
-
-            return true;
-        } else {
-            return false;
+        if (!File::exists($dateFolderPath)) {
+            return [];
         }
+
+        $dir = new RecursiveDirectoryIterator($dateFolderPath);
+        $result = [];
+
+        foreach ($dir as $item) {
+            $callbackResult = $callback($item);
+
+            if (!$callbackResult) {
+                continue;
+            }
+
+            if (is_array($callbackResult) && isset($callbackResult[0]) && isset($callbackResult[1])) {
+                [$key, $value] = $callbackResult;
+                $result[$key] = $value;
+                continue;
+            }
+
+            $result[] = $callbackResult;
+        }
+
+        return $result;
     }
 }

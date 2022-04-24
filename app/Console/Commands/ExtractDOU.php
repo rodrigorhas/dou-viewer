@@ -2,11 +2,8 @@
 
 namespace App\Console\Commands;
 
-use App\Services\DOUParserService;
-use DirectoryIterator;
+use App\Services\DOUExtractorService;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\File;
-use Illuminate\Support\Str;
 
 class ExtractDOU extends Command
 {
@@ -27,7 +24,7 @@ class ExtractDOU extends Command
     protected $description = 'Extract DOU by date';
 
     public function __construct(
-        protected DOUParserService $parserService = new DOUParserService(),
+        protected DOUExtractorService $extractorService = new DOUExtractorService(),
     )
     {
         parent::__construct();
@@ -41,47 +38,14 @@ class ExtractDOU extends Command
     {
         $dates = $this->argument('dates');
 
-        $dates = $this->parserService->todayIfEmpty($dates);
+        $dates = $this->extractorService->todayIfEmpty($dates);
 
         $reports = [];
 
         foreach ($dates as $date) {
-            $reports[$date] = $this->extractFolder($date);
+            $reports[$date] = $this->extractorService->extractFolder($date);
         }
 
         return $reports;
-    }
-
-    private function extractFolder(string $date, bool $overwrite = false): array
-    {
-        $folderPath = $this->parserService->getStoragePath(append: $date);
-        $iterator = new DirectoryIterator(
-            $folderPath
-        );
-
-        $sections = [];
-
-        /** @var DirectoryIterator $item */
-        foreach ($iterator as $item) {
-            if (Str::endsWith($item, '.zip')) {
-                $sectionName = Str::before($item, '.zip');
-
-                $section = [
-                    'name' => $sectionName,
-                    'file' => $item->getFilename(),
-                    'folder' => $folderPath . "/$sectionName"
-                ];
-
-                if (!$overwrite && File::exists($section['folder'])) {
-                    continue;
-                }
-
-                $section['extracted'] = $this->parserService->extractSectionZip($date, $sectionName);
-
-                $sections[] = $section;
-            }
-        }
-
-        return $sections;
     }
 }
