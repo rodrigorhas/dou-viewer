@@ -24,7 +24,7 @@ class DOUService
 
     protected Client $client;
     protected CookieJar $cookieJar;
-    protected Filesystem $storage;
+    public Filesystem $storage;
 
     public function __construct()
     {
@@ -179,7 +179,5 @@ class DOUService
     public function extract(array $dates = [])
     {
         $dates = $this->todayIfEmpty($dates);
-
-
     }
 }
