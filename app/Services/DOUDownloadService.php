@@ -10,12 +10,13 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Storage;
+use voku\helper\HtmlDomParser;
 
 
 class DOUDownloadService extends DOUService
 {
     const URL_LOGIN = "logar.php";
-    const URL_DOWNLOAD = "index.php";
+    const URL_INDEX = "index.php";
 
     const DOU_SECTIONS = ['DO1', 'DO2', 'DO3', 'DO1E', 'DO2E', 'DO3E'];
 
@@ -114,6 +115,38 @@ class DOUDownloadService extends DOUService
     {
         $filename = $this->getFilename($date, $section);
 
-        return self::URL_DOWNLOAD . "?p={$date}&dl={$filename}";
+        return self::URL_INDEX . "?p={$date}&dl={$filename}";
+    }
+
+    public function listRepositories ()
+    {
+        $html = Cache::remember('repository-list-html', now()->addMinutes(10), function () {
+            $response = $this->client->get(self::URL_INDEX, [
+                'cookies' => $this->cookieJar
+            ]);
+
+            return $response->getBody()->getContents();
+        });
+
+        $dom = HtmlDomParser::str_get_html($html);
+        $rows = $dom->find('#main-table > tr');
+
+        $baseUri = Config::get('inlabs.base_url');
+
+        return collect($rows)
+            ->map(function ($row) use ($baseUri) {
+                $link = $row->find('a', 0);
+                $columns = $row->find('td');
+
+                $url = implode('/', [$baseUri, self::URL_INDEX . $link->href]);
+
+                return [
+                    'name' => $link->text(),
+                    'size' => $columns[1]->text(),
+                    'url' => $url,
+                    'posted_at' => $columns[2]->text(),
+                ];
+            })
+            ->toArray();
     }
 }
